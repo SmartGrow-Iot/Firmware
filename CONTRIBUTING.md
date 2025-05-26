@@ -44,13 +44,10 @@ Refer to this guide if you're new to GitHub:
 ```
 smartgrow/
 │
-├── frontend/         # React Native App
-├── backend/          # Node.js or Python backend API
+├── monitoring-dashboard/ # React App
+├── backend/          # Python backend API
 ├── firmware/         # ESP32 Microcontroller code
-├── mobile/           # React-native app
-├── docs/             # Project documentation
-├── .env.example      # Environment variables template
-└── README.md         # Main overview
+├── mobile-interface/ # React-native app
 ```
 
 ---
@@ -59,10 +56,13 @@ smartgrow/
 
 If you’re unsure about anything, reach out to the team:
 
-| Name           | Role               | Username |
-| -------------- | ------------------ | -------- |
-| Ahmed Awelkair | Lead SQA Standards | a7m-1st  |
-
+| Name                          | Role                        | Username     |
+| ----------------------------- | --------------------------- | ------------ |
+| Ahmed Awelkair                | Lead SQA Standards          | a7m-1st      |
+| Afif Izuddin Siddik           | Code and standards Reviewer | Afif-Izuddin |
+| Adeline Kong Earn Ning        | Quality Standard Analyst 1  | iamAden      |
+| Yoong Jing Yi                 | Quality Standard Analyst 2  | yoongtaufoo  |
+| Noor Aisyah binti Ahmad Saufi | Quality Standard Analyst 3  | aisyah551    |
 
 > You can also open an Issue and tag the relevant person in the description.
 
@@ -102,3 +102,172 @@ If you’re unsure about anything, reach out to the team:
 - Respectfully review and respond to feedback on your PRs.
 
 We’re building something green 🌿 and great together. Thanks for helping SmartGrow thrive!
+
+
+
+
+
+
+
+
+
+
+
+
+
+**  
+  
+
+# SQA - Code Standards & Compliance
+
+  
+
+# Pull Request Guidelines
+
+  
+  
+
+v0.5
+
+# PR Title: (type): (description) (requirement)  
+
+> Example: `feat: Add sensor calibration (fr01)`
+
+  
+
+For the checklist, put an `x` in all boxes that apply. the boxes that apply should look like - [x] with no spaces.  
+
+For other sections, delete the placeholder text (_the italicized lines_) and replace it with your actual content.  
+
+  
+
+## Type:  
+
+- [x] `feat` (frXX / nfrXX) — New feature  
+
+- [ ] `fix` (bugfix) — Bug fix  
+
+- [x] `docs` — Documentation only changes  
+
+- [ ] `refactor` — Code restructuring without functional changes  
+
+- [ ] `test` — Adding or updating tests  
+
+- [ ] `chore` — Maintenance, build, config, or non-feature tasks
+
+  
+
+_If your PR includes more than one type, choose all that apply and make sure the **title reflects the main purpose**._
+
+for example: if your PR include both adding new feature and bugfixes: check both and use feat as the title, include both the feature and bug fixes in the description
+
+  
+
+## Requirement ID:  
+
+- Single: `(fr01)`  
+
+- Multiple: `(multi)`  
+
+- Not Applicable: *(omit parentheses)*  
+
+  
+
+---
+
+  
+
+## 🧾 Description
+
+  
+
+**What does this PR do?**  
+
+_Briefly explain the purpose and content of the pull request._
+
+  
+
+**Related Components**  
+
+_List any modules, subsystems, or groups that this change touches or depends on._
+
+  
+
+**Which group is responsible?**  
+
+_Indicate your group number (e.g., Group 4 - Web UI)._
+
+  
+
+---
+
+  
+
+## ✅ Checklist
+
+  
+
+- [x] PR title follows the naming convention
+
+- [x] Type and requirement are correctly marked
+
+- [x] My code follows the project's style guidelines
+
+- [ ] Code compiles/runs correctly
+
+- [ ] Tests are included/updated if needed
+
+- [ ] Documentation is updated (if applicable)
+
+  
+
+---
+
+  
+
+## 🧪 Testing Instructions
+
+  
+
+_How can reviewers test this PR? Provide steps, screenshots, or test cases._
+
+  
+
+---
+
+  
+
+## 🔗 Dependencies
+
+  
+
+_List any external dependencies, such as:_
+
+_- Related or prerequisite PRs (`#123`, `#456`)_
+
+_- Specific branches this must be merged after_
+
+_- Required libraries, modules, or services_
+
+  
+
+> Example:
+
+> - Depends on PR #102 (backend API changes)
+
+> - Uses `v2.0.1` of the temperature-sensor module
+
+  
+
+- ## 📌 Additional Notes
+
+  
+
+_Anything reviewers should know, consider, or keep in mind?_
+
+  
+
+---
+
+  
+**
