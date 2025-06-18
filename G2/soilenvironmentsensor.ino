@@ -1,32 +1,35 @@
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include <DHT.h>
 
-// Macro Definitions (UPPER_SNAKE_CASE)
-#define DHT_PIN       4       // GPIO4 connected to DHT11 data pin
+// --- Macro Definitions ---
+#define DHT_PIN       4
 #define DHT_TYPE      DHT11
-#define SOIL_PIN      32      // GPIO32 connected to soil moisture sensor
+#define SOIL_PIN      32  // Analog pin for soil moisture sensor
 
-// Global Constants
-const char* WIFI_SSID = "Cynex@2.4GHz";
+// --- WiFi Credentials (Constants) ---
+const char* WIFI_SSID     = "Cynex@2.4GHz";
 const char* WIFI_PASSWORD = "cyber@cynex";
 
-// Global Objects
-DHT dht(DHT_PIN, DHT_TYPE);
-WiFiServer wifiServer(80);
+// --- API Endpoint (Constant) ---
+const char* API_URL = "https://test-server-owq2.onrender.com/api/v1/plants/plant_jZkYQoPWp3XiylDU5jA6";
+
+// --- Global Objects ---
+DHT dhtSensor(DHT_PIN, DHT_TYPE);
 
 /**
- * @brief Initializes Serial, DHT sensor, and Wi-Fi.
+ * @brief Setup function for initializing Serial, DHT, and WiFi.
  */
 void setup()
 {
   Serial.begin(9600);
-  dht.begin();
+  dhtSensor.begin();
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
@@ -34,35 +37,89 @@ void setup()
   Serial.println("\nWiFi connected!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-
-  wifiServer.begin();
 }
 
 /**
- * @brief Reads and prints sensor data to Serial Monitor.
+ * @brief Main loop for fetching thresholds and reading sensor data.
  */
 void loop()
 {
-  // Read temperature and humidity from DHT11
-  float temperatureC = dht.readTemperature();
-  float humidityPercent = dht.readHumidity();
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient httpClient;
+    httpClient.begin(API_URL);
+    int httpResponseCode = httpClient.GET();
 
-  // Read soil moisture analog value
-  int soilMoistureValue = analogRead(SOIL_PIN);
+    if (httpResponseCode > 0) {
+      String payload = httpClient.getString();
+      Serial.println("\nReceived API response:");
+      Serial.println(payload);
 
-  // Display sensor readings on Serial Monitor
-  Serial.println("---- Sensor Data ----");
-  Serial.print("Temperature: ");
-  Serial.print(temperatureC);
-  Serial.println(" °C");
+      StaticJsonDocument<2048> jsonDoc;
+      DeserializationError jsonError = deserializeJson(jsonDoc, payload);
 
-  Serial.print("Humidity: ");
-  Serial.print(humidityPercent);
-  Serial.println(" %");
+      if (!jsonError) {
+        // --- Extract thresholds from JSON ---
+        float tempMin  = jsonDoc["thresholds"]["temperature"]["min"];
+        float tempMax  = jsonDoc["thresholds"]["temperature"]["max"];
+        float soilMin  = jsonDoc["thresholds"]["moisture"]["min"];
+        float soilMax  = jsonDoc["thresholds"]["moisture"]["max"];
+        float lightMin = jsonDoc["thresholds"]["light"]["min"];
+        float lightMax = jsonDoc["thresholds"]["light"]["max"];
 
-  Serial.print("Soil Moisture: ");
-  Serial.println(soilMoistureValue);
-  Serial.println("---------------------");
+        Serial.println("\n---- Thresholds from API ----");
+        Serial.printf("  Temperature: %.1f°C to %.1f°C\n", tempMin, tempMax);
+        Serial.printf("Soil Moisture: %.1f%% to %.1f%%\n", soilMin, soilMax);
+        Serial.printf(" Light Level: %.1f%% to %.1f%% (not measured)\n", lightMin, lightMax);
+        Serial.println("--------------------------------");
 
-  delay(1000);  // Wait 1 second before next reading
+        // --- Read sensor data ---
+        float temperature = dhtSensor.readTemperature();
+        float humidity    = dhtSensor.readHumidity();
+        int rawSoil       = analogRead(SOIL_PIN);  // Range: 0–4095 (ESP32 ADC)
+        float soilPercent = map(rawSoil, 0, 4095, 100, 0);  // Adjust based on calibration
+
+        Serial.println("\n---- Sensor Readings ----");
+        Serial.printf(" Temperature: %.1f°C\n", temperature);
+        Serial.printf("    Humidity: %.1f%%\n", humidity);
+        Serial.printf("Soil Moisture: %.1f%% (raw: %d)\n", soilPercent, rawSoil);
+        Serial.println("-----------------------------");
+
+        // --- Compare sensor readings with thresholds ---
+        Serial.println("\n---- Comparison ----");
+
+        if (temperature < tempMin) {
+          Serial.println("Temperature is too LOW!");
+        } else if (temperature > tempMax) {
+          Serial.println("Temperature is too HIGH!");
+        } else {
+          Serial.println("Temperature is OK.");
+        }
+
+        if (soilPercent < soilMin) {
+          Serial.println("Soil moisture is too LOW!");
+        } else if (soilPercent > soilMax) {
+          Serial.println("Soil moisture is too HIGH!");
+        } else {
+          Serial.println("Soil moisture is OK.");
+        }
+
+        Serial.println("-----------------------------\n");
+
+      } else {
+        Serial.print("JSON Parsing error: ");
+        Serial.println(jsonError.c_str());
+      }
+
+    } else {
+      Serial.print("HTTP Error: ");
+      Serial.println(httpResponseCode);
+    }
+
+    httpClient.end();
+
+  } else {
+    Serial.println("WiFi Disconnected!");
+  }
+
+  delay(3600000);  // Wait 1 hour before next iteration
 }
