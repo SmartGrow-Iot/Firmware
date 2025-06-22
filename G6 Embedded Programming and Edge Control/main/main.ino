@@ -200,10 +200,12 @@
     Serial.println("Loop started...");
     sensor.sendAllToCloud(SERVER_URL, USER_ID);
 
-    //For pump testing purpose
-    autoControlPump();
-
+    // For pump testing purpose with rate-limiting
     unsigned long currentTime = millis();
+    if (currentTime - lastAutoControlTime >= 10000) { // 10-second interval
+      autoControlPump();
+      lastAutoControlTime = currentTime;
+    }
 
     if (currentTime - lastPumpToggle >= 10000) { 
       pumpState = !pumpState; 
