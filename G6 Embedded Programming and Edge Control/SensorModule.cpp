@@ -86,7 +86,7 @@ void SensorModule::sendAllToCloud(const String &serverURL, const String &userId)
   for (int i = 0; i < MAX_PLANTS; i++)
   {
     float soilMoisture = readSoilMoisture(plants[i].soilPin);
-    Serial.printf("Soil Moisture: ", soilMoisture);
+    Serial.printf("Soil Moisture: %.2f\n", soilMoisture);
 
     String timestamp = getISO8601Time();
     String json = "{";
