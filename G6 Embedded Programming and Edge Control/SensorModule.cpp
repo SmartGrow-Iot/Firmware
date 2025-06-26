@@ -78,9 +78,15 @@ void SensorModule::sendAllToCloud(const String &serverURL, const String &userId)
   float airQualityPpm = readAirQuality();
   float lightLevel = readLightLevel();
 
+  Serial.printf("Temperature: %.2f °C\n", temperatureC);
+  Serial.printf("Humidity: %.2f %%\n", humidityPercentage);
+  Serial.printf("Air Quality (MQ2): %.2f ppm\n", airQualityPpm);
+  Serial.printf("Light Level (LDR): %.2f\n", lightLevel);
+
   for (int i = 0; i < MAX_PLANTS; i++)
   {
     float soilMoisture = readSoilMoisture(plants[i].soilPin);
+    Serial.printf("Soil Moisture: %.2f\n", soilMoisture);
 
     String timestamp = getISO8601Time();
     String json = "{";
