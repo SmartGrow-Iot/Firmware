@@ -1,133 +1,177 @@
-// Below commented lines are repeated in main.ino
-// #include <WiFi.h>
-// #include <HTTPClient.h>
-// #include <ArduinoJson.h>
-// #include <DHT.h>
-// #include <ActuatorModule.h>
-
-// // --- Pin Definitions ---
-// #define DHT_PIN      16
-// #define DHT_TYPE     DHT11
-// #define SOIL_PIN     32  // Analog pin for soil moisture sensor
-// #define PUMP_PIN     25  // Relay pin (change as per your wiring)
-
-// // --- WiFi Credentials ---
-// const char* WIFI_SSID = "Cynex@2.4GHz";
-// const char* WIFI_PASSWORD = "cyber@cynex";
-
-// // --- API Endpoint ---
-// const char* API_URL = "https://test-server-owq2.onrender.com/api/v1/plants/plant_jZkYQoPWp3XiylDU5jA6";
-
-// // --- Global Objects ---
-// DHT dht(DHT_PIN, DHT_TYPE);
-
-// void setup() {
-//   Serial.begin(9600);
-//   dht.begin();
-
-//   pinMode(PUMP_PIN, OUTPUT);
-//   digitalWrite(PUMP_PIN, LOW); // Start with pump OFF
-
-//   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-//   Serial.print("Connecting to WiFi");
-
-//   while (WiFi.status() != WL_CONNECTED) {
-//     delay(500);
-//     Serial.print(".");
-//   }
-
-//   Serial.println("\nWiFi connected!");
-//   Serial.print("IP address: ");
-//   Serial.println(WiFi.localIP());
-// }
-
-// void loop() {
-//   if (WiFi.status() == WL_CONNECTED) {
-//     HTTPClient http;
-//     http.begin(API_URL);
-//     int httpResponseCode = http.GET();
-
-//     if (httpResponseCode > 0) {
-//       String payload = http.getString();
-//       Serial.println("\nReceived API response:");
-//       Serial.println(payload);
-
-//       StaticJsonDocument<2048> doc;
-//       DeserializationError error = deserializeJson(doc, payload);
-
-//       if (!error) {
-//         // --- Extract Thresholds ---
-//         float soilMin = doc["thresholds"]["moisture"]["min"];
-//         float soilMax = doc["thresholds"]["moisture"]["max"];
-
-//         // --- Read Sensor Data ---
-//         int rawSoil = analogRead(SOIL_PIN); // ESP32 ADC: 0–4095
-//         float soilPercent = map(rawSoil, 0, 4095, 100, 0); // Adjust as per calibration
-
-//         Serial.println("\n---- Sensor Readings ----");
-//         Serial.printf("Soil Moisture: %.1f%% (raw: %d)\n", soilPercent, rawSoil);
-
-//         // --- Control Pump Based on Thresholds ---
-//         if (soilPercent < soilMin) {
-//           Serial.println("Soil too dry! Pump ON");
-//           digitalWrite(PUMP_PIN, HIGH); // ON
-//         } else if (soilPercent > soilMax) {
-//           Serial.println("Soil too wet! Pump OFF");
-//           digitalWrite(PUMP_PIN, LOW);  // OFF
-//         } else {
-//           Serial.println("Soil moisture is OK. Pump OFF");
-//           digitalWrite(PUMP_PIN, LOW);  // OFF
-//         }
-
-//       } else {
-//         Serial.print("JSON Parsing error: ");
-//         Serial.println(error.c_str());
-//       }
-
-//     } else {
-//       Serial.print("HTTP Error: ");
-//       Serial.println(httpResponseCode);
-//     }
-
-//     http.end();
-//   } else {
-//     Serial.println("WiFi Disconnected!");
-//   }
-
-//   delay(10000); // Check every 10 seconds
-// }
-
 #include "ActuatorModule.h"
-#include <Arduino.h>
 
-ActuatorModule::ActuatorModule(int pump, int fan, int light) 
+ActuatorModule::ActuatorModule(
+    int pump,
+    int fan1,
+    int fan2,
+    int light,
+    Adafruit_MQTT_Publish *publish,
+    Adafruit_MQTT_Publish *feedback,
+    Adafruit_MQTT_Subscribe *subscribe)
 {
   pumpPin = pump;
-  fanPin = fan;
+  fanPin1 = fan1;
+  fanPin2 = fan2;
   lightPin = light;
+  publishFeed = publish;
+  feedbackFeed = feedback;
+  subscribeFeed = subscribe;
 }
 
-void ActuatorModule::begin() 
+void ActuatorModule::begin()
 {
+  Serial.println("Initializing actuators...");
   pinMode(pumpPin, OUTPUT);
-  pinMode(fanPin, OUTPUT);
+  pinMode(fanPin1, OUTPUT);
+  pinMode(fanPin2, OUTPUT);
   pinMode(lightPin, OUTPUT);
-  digitalWrite(pumpPin, LOW);
-  digitalWrite(fanPin, LOW);
-  digitalWrite(lightPin, LOW);
+  Serial.println("Actuators initialized.");
 }
 
-void ActuatorModule::setPump(bool state) 
+String ActuatorModule::getISO8601Time()
 {
+  struct tm timeinfo;
+  time_t now;
+
+  time(&now);                   // Get current time as time_t
+  now += 8 * 3600;              // Add 8 hours for UTC+8
+  gmtime_r(&now, &timeinfo);    // Convert to UTC+8 time
+
+  char buffer[30];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+
+  Serial.println("Timestamp (UTC+8): " + String(buffer));
+  return String(buffer);
+}
+
+void ActuatorModule::sendFeedback(const String &action, const String &triggeredBy, const String &source, const String &zone, bool success)
+{
+  StaticJsonDocument<256> doc;
+
+  String timestamp = getISO8601Time();
+
+  doc["action"] = action;
+  doc["triggeredBy"] = triggeredBy;
+  doc["source"] = source;
+  doc["zone"] = zone;
+  doc["timestamp"] = timestamp;
+  doc["result"] = success ? "success" : "fail";
+
+  char payload[256];
+  serializeJson(doc, payload);
+
+  if (feedbackFeed)
+  {
+    if (!feedbackFeed->publish(payload))
+    {
+      Serial.println("Failed to publish actuator feedback");
+    }
+    else
+    {
+      Serial.println("Actuator feedback published");
+    }
+  }
+}
+
+void ActuatorModule::callback(Adafruit_MQTT_Subscribe *subscription)
+{
+  Serial.println("ActuatorModule callback triggered");
+  // Ensure the message came from the correct topic
+  if (subscribeFeed && strcmp(subscription->topic, subscribeFeed->topic) == 0)
+  {
+    const char *command = (char *)subscribeFeed->lastread;
+
+    // Parse JSON payload
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, command);
+
+    if (error)
+    {
+      Serial.print("JSON parse failed: ");
+      Serial.println(error.c_str());
+      return;
+    }
+
+    // Read JSON fields
+    const char *light = doc["light"];
+    const char *fan = doc["fan"];
+    const char *pump = doc["pump"];
+
+    Serial.print("Light: ");
+    Serial.println(light);
+    Serial.print("Fan: ");
+    Serial.println(fan);
+    Serial.print("Pump: ");
+    Serial.println(pump);
+
+    if (light != nullptr)
+    {
+      setLight(strcmp(light, "ON") == 0, false);
+      delay(5000);
+    }
+
+    if (fan != nullptr)
+    {
+      setFan(strcmp(fan, "ON") == 0, false);
+      delay(5000);
+    }
+
+    if (pump != nullptr)
+    {
+      setPump(strcmp(pump, "ON") == 0, false);
+      delay(5000);
+    }
+  }
+}
+
+void ActuatorModule::setPump(bool state, bool system)
+{
+  const bool currentState = digitalRead(pumpPin) == HIGH ? true : false;
+  if( currentState == state ) {
+    Serial.println("Pump is already in the desired state. No action taken.");
+    return;
+  }
   digitalWrite(pumpPin, state ? HIGH : LOW);
+  sendFeedback(
+      String("pump ") + (state ? "ON" : "OFF"),
+      system ? "SYSTEM" : "USER",
+      system ? "auto" : "manual",
+      "zone1",
+      true);
 }
 
-void ActuatorModule::setFan(bool state) 
+void ActuatorModule::setFan(bool state, bool system)
 {
-  digitalWrite(fanPin, state ? HIGH : LOW);
+  const bool currentState = digitalRead(fanPin1) == HIGH ? true : false;
+  const bool currentState2 = digitalRead(fanPin2) == HIGH ? true : false;
+  if( currentState == state && currentState2 == state ) 
+  {
+    Serial.println("Fan is already in the desired state. No action taken.");
+    return;
+  }
+  digitalWrite(fanPin1, state ? HIGH : LOW);
+  digitalWrite(fanPin2, state ? HIGH : LOW);
+  sendFeedback(
+      String("fan ") + (state ? "ON" : "OFF"),
+      system ? "SYSTEM" : "USER",
+      system ? "auto" : "manual",
+      "zone1",
+      true);
 }
 
-void ActuatorModule::setLight(bool state) 
+void ActuatorModule::setLight(bool state, bool system)
 {
+  const bool currentState = digitalRead(lightPin) == HIGH ? true : false;
+  if( currentState == state ) 
+  {
+    Serial.println("Light is already in the desired state. No action taken.");
+    return;
+  }
   digitalWrite(lightPin, state ? HIGH : LOW);
+  sendFeedback(
+      String("light ") + (state ? "ON" : "OFF"),
+      system ? "SYSTEM" : "USER",
+      system ? "auto" : "manual",
+      "zone1",
+      true);
 }

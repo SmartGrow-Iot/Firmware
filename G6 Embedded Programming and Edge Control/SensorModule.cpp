@@ -61,13 +61,16 @@ float SensorModule::readHumidity()
 String SensorModule::getISO8601Time()
 {
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo))
-  {
-    return "1970-01-01T00:00:00Z";
-  }
+  time_t now;
+
+  time(&now);                   // Get current time as time_t
+  now += 8 * 3600;              // Add 8 hours for UTC+8
+  gmtime_r(&now, &timeinfo);    // Convert to UTC+8 time
+
   char buffer[30];
   strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
-  Serial.println("Timestamp: " + String(buffer));
+
+  Serial.println("Timestamp (UTC+8): " + String(buffer));
   return String(buffer);
 }
 
@@ -78,15 +81,9 @@ void SensorModule::sendAllToCloud(const String &serverURL, const String &userId)
   float airQualityPpm = readAirQuality();
   float lightLevel = readLightLevel();
 
-  Serial.printf("Temperature: %.2f °C\n", temperatureC);
-  Serial.printf("Humidity: %.2f %%\n", humidityPercentage);
-  Serial.printf("Air Quality (MQ2): %.2f ppm\n", airQualityPpm);
-  Serial.printf("Light Level (LDR): %.2f\n", lightLevel);
-
   for (int i = 0; i < MAX_PLANTS; i++)
   {
     float soilMoisture = readSoilMoisture(plants[i].soilPin);
-    Serial.printf("Soil Moisture: %.2f\n", soilMoisture);
 
     String timestamp = getISO8601Time();
     String json = "{";
@@ -118,3 +115,103 @@ void SensorModule::sendAllToCloud(const String &serverURL, const String &userId)
   }
 }
 
+bool SensorModule::fetchThresholdsFromAPI()
+{
+  const char *url = "https://test-server-owq2.onrender.com/api/v1/plants/plant_kF6h3AT8VaUm73MBkgRP";
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    HTTPClient http;
+    http.begin(url);
+    int httpResponseCode = http.GET();
+
+    if (httpResponseCode == 200)
+    {
+      String payload = http.getString();
+
+      StaticJsonDocument<1024> doc;
+      DeserializationError error = deserializeJson(doc, payload);
+
+      if (!error)
+      {
+        lightMin = doc["thresholds"]["light"]["min"];
+        lightMax = doc["thresholds"]["light"]["max"];
+        airQualityMin = doc["thresholds"]["airQuality"]["min"];
+        airQualityMax = doc["thresholds"]["airQuality"]["max"];
+        tempMin = doc["thresholds"]["temperature"]["min"];
+        tempMax = doc["thresholds"]["temperature"]["max"];
+        soilMin = doc["thresholds"]["moisture"]["min"];
+        soilMax = doc["thresholds"]["moisture"]["max"];
+
+        Serial.printf("Fetched Light Threshold Min: %.2f, Max: %.2f\n", lightMin, lightMax);
+        Serial.printf("Fetched Air Quality Min: %.2f, Max: %.2f\n", airQualityMin, airQualityMax);
+
+        http.end();
+        return true;
+      }
+      else
+      {
+        Serial.println("Failed to parse JSON.");
+      }
+    }
+    else
+    {
+      Serial.printf("HTTP GET failed, code: %d\n", httpResponseCode);
+    }
+    http.end();
+  }
+  return false;
+}
+
+bool SensorModule::checkAndTrigger(const String &sensorName, int sensorValue, float maxVal)
+{
+  bool trigger = (sensorValue <= maxVal);
+  Serial.printf("%s Value: %d — Max: %.2f → %s\n",
+                sensorName.c_str(), sensorValue, maxVal,
+                trigger ? "ACTIVE" : "DEACTIVATED (Above Max)");
+  return trigger;
+}
+
+bool SensorModule::shouldWater(const std::vector<PlantData> &plantList)
+{
+  bool needsWater = false;
+
+  const int dryADC = 3900; // ADC value when dry
+  const int wetADC = 1200; // ADC value when fully wet
+
+  for (const auto &plant : plantList)
+  {
+    int pin = plant.moisturePin;
+    float minThreshold = plant.min_moisture; // in %
+    float maxThreshold = plant.max_moisture; // in %
+
+    // Convert raw ADC value to moisture percentage
+    int rawValue = analogRead(pin);
+    float moisturePercent = map(rawValue, dryADC, wetADC, 0, 100);
+    moisturePercent = constrain(moisturePercent, 0, 100);
+
+    Serial.printf("[Moisture Check] Plant ID %s at Pin %d → Raw: %d, Converted: %.2f%% (Min: %.2f%%, Max: %.2f%%)\n",
+                  plant.plantId.c_str(), pin, rawValue, moisturePercent, minThreshold, maxThreshold);
+
+    if (moisturePercent > maxThreshold)
+    {
+      Serial.printf("[Too Wet] Plant ID %s is above max threshold (%.2f%%). Watering skipped.\n",
+                    plant.plantId.c_str(), moisturePercent);
+      return false; // If any plant is too wet, skip watering
+    }
+
+    if (moisturePercent < minThreshold)
+    {
+      needsWater = true; // Mark that watering is needed
+    }
+  }
+
+  if (needsWater)
+  {
+    Serial.println("[Watering Triggered] At least one plant needs water, and none are overwatered.");
+    return true;
+  }
+
+  Serial.println("[No Watering] All moisture levels are within acceptable range.");
+  return false;
+}
